@@ -1,148 +1,188 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
-local camera = workspace.CurrentCamera
+local camera = Workspace.CurrentCamera
 
--- 캐릭터 루트 파트 가져오기
-local function getRootPart()
-	local char = player.Character or player.CharacterAdded:Wait()
-	return char:WaitForChild("HumanoidRootPart")
+local function getCharacter()
+	return player.Character or player.CharacterAdded:Wait()
 end
 
--- TP 상태
-local tpEnabled = false
-local tpUnlocked = false  -- 암호 맞으면 true
-local currentKey = ""
+local function getHumanoid()
+	return getCharacter():WaitForChild("Humanoid")
+end
 
--- GUI 생성
+local function getRoot()
+	return getCharacter():WaitForChild("HumanoidRootPart")
+end
+
+-- 상태값
+local tpEnabled = false
+local speedOn = false
+local jumpOn = false
+local nightOn = false
+local pendingPosition = nil
+local marker = nil
+
+-- ===== GUI =====
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 250, 0, 220)
+frame.Size = UDim2.new(0, 260, 0, 300)
 frame.Position = UDim2.new(0, 50, 0, 50)
-frame.BackgroundColor3 = Color3.fromRGB(50,50,50)
+frame.BackgroundColor3 = Color3.fromRGB(40,40,40)
 frame.Active = true
 frame.Draggable = true
 
--- 제목
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2.new(1,0,0,30)
-title.BackgroundColor3 = Color3.fromRGB(30,30,30)
+title.BackgroundColor3 = Color3.fromRGB(25,25,25)
 title.TextColor3 = Color3.new(1,1,1)
-title.Text = "TP Toggle (Key Required)"
+title.Text = "All In One Panel"
 
--- 키 라벨
-local keyLabel = Instance.new("TextLabel", frame)
-keyLabel.Size = UDim2.new(0.8,0,0,25)
-keyLabel.Position = UDim2.new(0.1,0,0.1,0)
-keyLabel.BackgroundTransparency = 0.5
-keyLabel.BackgroundColor3 = Color3.fromRGB(60,60,60)
-keyLabel.TextColor3 = Color3.new(1,1,0)
-keyLabel.Text = "키 없음"
-keyLabel.TextScaled = true
+local credit = Instance.new("TextLabel", frame)
+credit.Size = UDim2.new(1,0,0,20)
+credit.Position = UDim2.new(0,0,0,30)
+credit.BackgroundTransparency = 1
+credit.TextColor3 = Color3.fromRGB(170,170,170)
+credit.TextScaled = true
+credit.Text = "Developed by siheon_01"
 
--- 키 얻기 버튼
-local getKeyButton = Instance.new("TextButton", frame)
-getKeyButton.Size = UDim2.new(0.8,0,0,30)
-getKeyButton.Position = UDim2.new(0.1,0,0.3,0)
-getKeyButton.Text = "키 얻기"
-getKeyButton.BackgroundColor3 = Color3.fromRGB(80,80,80)
-getKeyButton.TextColor3 = Color3.new(1,1,1)
-
--- 입력 박스
-local inputBox = Instance.new("TextBox", frame)
-inputBox.Size = UDim2.new(0.8,0,0,30)
-inputBox.Position = UDim2.new(0.1,0,0.45,0)
-inputBox.PlaceholderText = "암호 입력"
-inputBox.Text = ""
-
--- TP 버튼
-local button = Instance.new("TextButton", frame)
-button.Size = UDim2.new(0.8,0,0,40)
-button.Position = UDim2.new(0.1,0,0.65,0)
-button.Text = "TP를 사용하려면 암호를 입력하세요"
-button.BackgroundColor3 = Color3.fromRGB(100,100,255)
-button.TextColor3 = Color3.new(1,1,1)
-
--- 랜덤 키 생성 함수 (소문자 + 숫자, 5글자 고정)
-local function generateKey()
-	local length = 5
-	local chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-	local key = ""
-	for i = 1,length do
-		local rand = math.random(1,#chars)
-		key = key .. string.sub(chars, rand, rand)
-	end
-	return key
+local function makeButton(text, y, color)
+	local b = Instance.new("TextButton", frame)
+	b.Size = UDim2.new(0.8,0,0,35)
+	b.Position = UDim2.new(0.1,0,y,0)
+	b.Text = text
+	b.BackgroundColor3 = color
+	b.TextColor3 = Color3.new(1,1,1)
+	return b
 end
 
--- 키 얻기 버튼 클릭
-getKeyButton.MouseButton1Click:Connect(function()
-	currentKey = generateKey()
-	keyLabel.Text = "생성 키: "..currentKey
+local tpBtn = makeButton("TP OFF",0.20,Color3.fromRGB(100,100,255))
+local speedBtn = makeButton("Speed OFF",0.35,Color3.fromRGB(80,160,255))
+local jumpBtn = makeButton("Jump OFF",0.50,Color3.fromRGB(80,255,120))
+local nightBtn = makeButton("Night OFF",0.65,Color3.fromRGB(150,150,255))
 
-	-- Studio에서는 클립보드 복사
-	pcall(function()
-		UserInputService:SetClipboard(currentKey)
-	end)
-
-	print("생성된 키:", currentKey)
-end)
-
--- 암호 입력 확인
-inputBox.FocusLost:Connect(function(enterPressed)
-	if enterPressed then
-		if inputBox.Text == currentKey and currentKey ~= "" then
-			tpUnlocked = true
-			button.Text = "TP OFF"
-			print("인증 성공! TP 잠금 해제 (게임 종료 전까지 유지)")
-		else
-			tpUnlocked = false
-			button.Text = "TP를 사용하려면 암호를 입력하세요"
-			print("암호 틀림! TP 잠금 유지")
-		end
-	end
-end)
-
--- TP 버튼 클릭
-button.MouseButton1Click:Connect(function()
-	if not tpUnlocked then
-		button.Text = "TP를 사용하려면 암호를 입력하세요"
-		return
-	end
-	
+-- ===== 버튼 기능 =====
+tpBtn.MouseButton1Click:Connect(function()
 	tpEnabled = not tpEnabled
-	button.Text = tpEnabled and "TP ON" or "TP OFF"
+	tpBtn.Text = tpEnabled and "TP ON" or "TP OFF"
 end)
 
--- TP 함수
-local function tpToPosition(pos)
-	local root = getRootPart()
-	local halfHeight = root.Size.Y / 2
-	root.CFrame = CFrame.new(pos.X, pos.Y + halfHeight, pos.Z)
+speedBtn.MouseButton1Click:Connect(function()
+	speedOn = not speedOn
+	getHumanoid().WalkSpeed = speedOn and 32 or 16
+	speedBtn.Text = speedOn and "Speed ON" or "Speed OFF"
+end)
+
+jumpBtn.MouseButton1Click:Connect(function()
+	jumpOn = not jumpOn
+	getHumanoid().JumpPower = jumpOn and 100 or 50
+	jumpBtn.Text = jumpOn and "Jump ON" or "Jump OFF"
+end)
+
+nightBtn.MouseButton1Click:Connect(function()
+	nightOn = not nightOn
+	Lighting.ClockTime = nightOn and 0 or 14
+	nightBtn.Text = nightOn and "Night ON" or "Night OFF"
+end)
+
+-- ===== 확인창 =====
+local confirmFrame = Instance.new("Frame", gui)
+confirmFrame.Size = UDim2.new(0, 300, 0, 160)
+confirmFrame.Position = UDim2.new(0.5, -150, 0.5, -80)
+confirmFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+confirmFrame.Visible = false
+
+local confirmText = Instance.new("TextLabel", confirmFrame)
+confirmText.Size = UDim2.new(1,0,0.4,0)
+confirmText.BackgroundTransparency = 1
+confirmText.TextColor3 = Color3.new(1,1,1)
+confirmText.TextScaled = true
+confirmText.Text = "정말로 이동하시겠습니까?"
+
+local coordLabel = Instance.new("TextLabel", confirmFrame)
+coordLabel.Size = UDim2.new(1,0,0.2,0)
+coordLabel.Position = UDim2.new(0,0,0.4,0)
+coordLabel.BackgroundTransparency = 1
+coordLabel.TextColor3 = Color3.fromRGB(200,200,200)
+coordLabel.TextScaled = true
+
+local yesBtn = Instance.new("TextButton", confirmFrame)
+yesBtn.Size = UDim2.new(0.4,0,0.25,0)
+yesBtn.Position = UDim2.new(0.1,0,0.7,0)
+yesBtn.Text = "네"
+yesBtn.BackgroundColor3 = Color3.fromRGB(80,200,120)
+
+local noBtn = Instance.new("TextButton", confirmFrame)
+noBtn.Size = UDim2.new(0.4,0,0.25,0)
+noBtn.Position = UDim2.new(0.5,0,0.7,0)
+noBtn.Text = "아니요"
+noBtn.BackgroundColor3 = Color3.fromRGB(200,80,80)
+
+-- ===== TP 관련 =====
+local function teleport(pos)
+	getRoot().CFrame = CFrame.new(pos + Vector3.new(0,3,0))
 end
 
--- PC: 마우스 클릭
-local mouse = player:GetMouse()
-mouse.Button1Down:Connect(function()
+local function removeMarker()
+	if marker then
+		marker:Destroy()
+		marker = nil
+	end
+end
+
+local function createMarker(pos)
+	removeMarker()
+	marker = Instance.new("Part")
+	marker.Size = Vector3.new(2,0.2,2)
+	marker.Anchored = true
+	marker.CanCollide = false
+	marker.Material = Enum.Material.Neon
+	marker.Color = Color3.fromRGB(255,0,0)
+	marker.Position = pos + Vector3.new(0,0.1,0)
+	marker.Parent = Workspace
+end
+
+UserInputService.TouchTap:Connect(function(touchPositions, gameProcessed)
+	if gameProcessed then return end
 	if not tpEnabled then return end
-	local target = mouse.Hit
-	if target then
-		tpToPosition(target.Position)
+	
+	local pos = touchPositions[1]
+	if not pos then return end
+	
+	local ray = camera:ScreenPointToRay(pos.X, pos.Y)
+	local result = Workspace:Raycast(ray.Origin, ray.Direction * 1000)
+	
+	if result and result.Position then
+		pendingPosition = result.Position
+		createMarker(pendingPosition)
+		
+		coordLabel.Text = string.format(
+			"X: %.1f  Y: %.1f  Z: %.1f",
+			pendingPosition.X,
+			pendingPosition.Y,
+			pendingPosition.Z
+		)
+		
+		confirmFrame.Visible = true
 	end
 end)
 
--- 모바일: 터치
-UserInputService.TouchStarted:Connect(function(input)
-	if not tpEnabled then return end
-	if input.UserInputType == Enum.UserInputType.Touch then
-		local ray = camera:ScreenPointToRay(input.Position.X, input.Position.Y)
-		local result = workspace:Raycast(ray.Origin, ray.Direction * 1000)
-		if result then
-			tpToPosition(result.Position)
-		end
+yesBtn.MouseButton1Click:Connect(function()
+	if pendingPosition then
+		teleport(pendingPosition)
 	end
+	removeMarker()
+	confirmFrame.Visible = false
+	pendingPosition = nil
+end)
+
+noBtn.MouseButton1Click:Connect(function()
+	removeMarker()
+	confirmFrame.Visible = false
+	pendingPosition = nil
 end)
