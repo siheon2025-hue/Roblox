@@ -1,105 +1,124 @@
--- All In One Ultimate GUI
+-- LocalScript (StarterPlayerScripts)
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
-local Workspace = game:GetService("Workspace")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-local camera = Workspace.CurrentCamera
+local mouse = player:GetMouse()
 
-local function getCharacter()
+local function getChar()
 	return player.Character or player.CharacterAdded:Wait()
 end
 
-local function getHumanoid()
-	return getCharacter():WaitForChild("Humanoid")
+local function getHum()
+	return getChar():WaitForChild("Humanoid")
 end
 
 local function getRoot()
-	return getCharacter():WaitForChild("HumanoidRootPart")
+	return getChar():WaitForChild("HumanoidRootPart")
 end
 
 -- 상태값
-local tpEnabled = false
-local speedOn = false
-local jumpOn = false
-local nightOn = false
-local espEnabled = false
+local tpOn = false
+local espOn = false
 
-local pendingPosition = nil
-local marker = nil
-local espObjects = {}
+local defaultSpeed = 16
+local defaultJump = 50
+
+local marker
+local pendingPos
+local espTable = {}
 
 -- ===== GUI =====
-local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+
+local gui = Instance.new("ScreenGui", player.PlayerGui)
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 260, 0, 360)
-frame.Position = UDim2.new(0, 50, 0, 50)
-frame.BackgroundColor3 = Color3.fromRGB(40,40,40)
+frame.Size = UDim2.fromOffset(340, 550)
+frame.Position = UDim2.fromOffset(80, 60)
+frame.BackgroundColor3 = Color3.fromRGB(255,0,0)
 frame.Active = true
 frame.Draggable = true
+Instance.new("UICorner", frame)
 
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0,12)
+-- 🌈 무지개 배경
+RunService.RenderStepped:Connect(function()
+	local hue = tick() % 5 / 5
+	frame.BackgroundColor3 = Color3.fromHSV(hue,1,1)
+end)
 
-local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1,0,0,30)
-title.BackgroundColor3 = Color3.fromRGB(25,25,25)
-title.TextColor3 = Color3.new(1,1,1)
-title.Text = "All In One Panel"
-Instance.new("UICorner", title).CornerRadius = UDim.new(0,12)
-
-local credit = Instance.new("TextLabel", frame)
-credit.Size = UDim2.new(1,0,0,20)
-credit.Position = UDim2.new(0,0,0,30)
-credit.BackgroundTransparency = 1
-credit.TextColor3 = Color3.fromRGB(170,170,170)
-credit.TextScaled = true
-credit.Text = "Developed by siheon_01"
-
-local function makeButton(text, y, color)
+local function makeBtn(text,y,color)
 	local b = Instance.new("TextButton", frame)
-	b.Size = UDim2.new(0.8,0,0,35)
+	b.Size = UDim2.new(0.8,0,0,40)
 	b.Position = UDim2.new(0.1,0,y,0)
 	b.Text = text
 	b.BackgroundColor3 = color
 	b.TextColor3 = Color3.new(1,1,1)
 	b.BorderSizePixel = 0
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
+	Instance.new("UICorner", b)
 	return b
 end
 
-local tpBtn    = makeButton("TP OFF",0.18,Color3.fromRGB(100,100,255))
-local speedBtn = makeButton("Speed OFF",0.30,Color3.fromRGB(80,160,255))
-local jumpBtn  = makeButton("Jump OFF",0.42,Color3.fromRGB(80,255,120))
-local nightBtn = makeButton("Night OFF",0.54,Color3.fromRGB(150,150,255))
-local espBtn   = makeButton("위치 확인 끔",0.66,Color3.fromRGB(0,170,255))
+-- TP
+local tpBtn = makeBtn("TP OFF",0.05,Color3.fromRGB(100,100,255))
+
+-- Speed
+local speedBox = Instance.new("TextBox", frame)
+speedBox.Size = UDim2.new(0.8,0,0,35)
+speedBox.Position = UDim2.new(0.1,0,0.15,0)
+speedBox.PlaceholderText = "Speed 입력"
+speedBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+speedBox.TextColor3 = Color3.new(1,1,1)
+speedBox.BorderSizePixel = 0
+Instance.new("UICorner", speedBox)
+
+local speedBtn = makeBtn("Speed 적용",0.22,Color3.fromRGB(80,160,255))
+
+-- Jump
+local jumpBox = Instance.new("TextBox", frame)
+jumpBox.Size = UDim2.new(0.8,0,0,35)
+jumpBox.Position = UDim2.new(0.1,0,0.32,0)
+jumpBox.PlaceholderText = "Jump 입력"
+jumpBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+jumpBox.TextColor3 = Color3.new(1,1,1)
+jumpBox.BorderSizePixel = 0
+Instance.new("UICorner", jumpBox)
+
+local jumpBtn = makeBtn("Jump 적용",0.39,Color3.fromRGB(80,255,120))
+
+-- 낮 / 밤
+local dayBtn = makeBtn("낮",0.49,Color3.fromRGB(255,200,100))
+local nightBtn = makeBtn("밤",0.56,Color3.fromRGB(100,100,255))
+
+-- ESP
+local espBtn = makeBtn("ESP OFF",0.65,Color3.fromRGB(255,80,80))
 
 -- ===== 기능 =====
 
 tpBtn.MouseButton1Click:Connect(function()
-	tpEnabled = not tpEnabled
-	tpBtn.Text = tpEnabled and "TP ON" or "TP OFF"
+	tpOn = not tpOn
+	tpBtn.Text = tpOn and "TP ON" or "TP OFF"
 end)
 
 speedBtn.MouseButton1Click:Connect(function()
-	speedOn = not speedOn
-	getHumanoid().WalkSpeed = speedOn and 32 or 16
-	speedBtn.Text = speedOn and "Speed ON" or "Speed OFF"
+	local v = tonumber(speedBox.Text)
+	getHum().WalkSpeed = v or defaultSpeed
 end)
 
 jumpBtn.MouseButton1Click:Connect(function()
-	jumpOn = not jumpOn
-	getHumanoid().JumpPower = jumpOn and 100 or 50
-	jumpBtn.Text = jumpOn and "Jump ON" or "Jump OFF"
+	local v = tonumber(jumpBox.Text)
+	getHum().JumpPower = v or defaultJump
+end)
+
+dayBtn.MouseButton1Click:Connect(function()
+	Lighting.ClockTime = 14
 end)
 
 nightBtn.MouseButton1Click:Connect(function()
-	nightOn = not nightOn
-	Lighting.ClockTime = nightOn and 0 or 14
-	nightBtn.Text = nightOn and "Night ON" or "Night OFF"
+	Lighting.ClockTime = 0
 end)
 
 -- ===== ESP =====
@@ -107,149 +126,101 @@ end)
 local function addESP(plr)
 	if plr == player then return end
 	if not plr.Character then return end
-	if espObjects[plr] then return end
-
-	local char = plr.Character
-	local humanoid = char:FindFirstChildOfClass("Humanoid")
-	local head = char:FindFirstChild("Head")
-	if not humanoid or not head then return end
+	if espTable[plr] then return end
 
 	local highlight = Instance.new("Highlight")
 	highlight.FillColor = Color3.fromRGB(255,0,0)
-	highlight.FillTransparency = 0.5
+	highlight.FillTransparency = 0.4
 	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	highlight.Adornee = char
-	highlight.Parent = char
+	highlight.Adornee = plr.Character
+	highlight.Parent = plr.Character
 
-	local bb = Instance.new("BillboardGui")
-	bb.Adornee = head
-	bb.AlwaysOnTop = true
-	bb.MaxDistance = 0
-	bb.Size = UDim2.fromOffset(120,14)
-	bb.StudsOffset = Vector3.new(0,2.8,0)
-	bb.Parent = head
-
-	local bg = Instance.new("Frame", bb)
-	bg.Size = UDim2.fromScale(1,1)
-	bg.BackgroundColor3 = Color3.fromRGB(40,40,40)
-	bg.BorderSizePixel = 0
-	Instance.new("UICorner", bg).CornerRadius = UDim.new(0,6)
-
-	local bar = Instance.new("Frame", bg)
-	bar.Size = UDim2.fromScale(1,1)
-	bar.BackgroundColor3 = Color3.fromRGB(0,255,0)
-	bar.BorderSizePixel = 0
-	Instance.new("UICorner", bar).CornerRadius = UDim.new(0,6)
-
-	local function update()
-		bar.Size = UDim2.fromScale(
-			math.clamp(humanoid.Health/humanoid.MaxHealth,0,1),
-			1
-		)
-	end
-
-	update()
-	humanoid.HealthChanged:Connect(update)
-
-	espObjects[plr] = {highlight, bb}
+	espTable[plr] = highlight
 end
 
-local function removeAllESP()
-	for _, objs in pairs(espObjects) do
-		for _, obj in ipairs(objs) do
-			if obj then obj:Destroy() end
-		end
+local function removeESP()
+	for _,v in pairs(espTable) do
+		if v then v:Destroy() end
 	end
-	table.clear(espObjects)
+	table.clear(espTable)
 end
 
 espBtn.MouseButton1Click:Connect(function()
-	espEnabled = not espEnabled
-	espBtn.Text = espEnabled and "위치 확인 킴" or "위치 확인 끔"
+	espOn = not espOn
+	espBtn.Text = espOn and "ESP ON" or "ESP OFF"
 
-	if espEnabled then
-		for _, plr in pairs(Players:GetPlayers()) do
+	if espOn then
+		for _,plr in pairs(Players:GetPlayers()) do
 			addESP(plr)
 		end
 	else
-		removeAllESP()
+		removeESP()
 	end
 end)
 
 Players.PlayerAdded:Connect(function(plr)
 	plr.CharacterAdded:Connect(function()
-		if espEnabled then
-			task.wait(0.5)
-			addESP(plr)
-		end
+		task.wait(0.5)
+		if espOn then addESP(plr) end
 	end)
 end)
 
--- ===== TP 시스템 =====
+-- ===== TP 네온 발판 + 작은 확인창 =====
 
-local confirmFrame = Instance.new("Frame", gui)
-confirmFrame.Size = UDim2.new(0, 300, 0, 150)
-confirmFrame.Position = UDim2.new(0.5, -150, 0.5, -75)
-confirmFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
-confirmFrame.Visible = false
-Instance.new("UICorner", confirmFrame).CornerRadius = UDim.new(0,12)
+mouse.Button1Down:Connect(function()
+	if not tpOn then return end
+	if not mouse.Hit then return end
 
-local confirmText = Instance.new("TextLabel", confirmFrame)
-confirmText.Size = UDim2.new(1,0,0.4,0)
-confirmText.BackgroundTransparency = 1
-confirmText.TextColor3 = Color3.new(1,1,1)
-confirmText.TextScaled = true
-confirmText.Text = "정말로 이동하시겠습니까?"
+	local pos = mouse.Hit.Position
+	pendingPos = pos
 
-local coordLabel = Instance.new("TextLabel", confirmFrame)
-coordLabel.Size = UDim2.new(1,0,0.2,0)
-coordLabel.Position = UDim2.new(0,0,0.4,0)
-coordLabel.BackgroundTransparency = 1
-coordLabel.TextColor3 = Color3.fromRGB(200,200,200)
-coordLabel.TextScaled = true
+	if marker then marker:Destroy() end
 
-local yesBtn = makeButton("네",0.65,Color3.fromRGB(80,200,120))
-yesBtn.Parent = confirmFrame
-yesBtn.Position = UDim2.new(0.1,0,0.65,0)
+	marker = Instance.new("Part")
+	marker.Size = Vector3.new(6,0.5,6)
+	marker.Position = pos + Vector3.new(0,0.25,0)
+	marker.Anchored = true
+	marker.CanCollide = false
+	marker.Material = Enum.Material.Neon
+	marker.Color = Color3.fromRGB(255,0,0)
+	marker.Parent = workspace
 
-local noBtn = makeButton("아니요",0.65,Color3.fromRGB(200,80,80))
-noBtn.Parent = confirmFrame
-noBtn.Position = UDim2.new(0.55,0,0.65,0)
+	-- 작은 확인창
+	local confirmGui = Instance.new("ScreenGui", player.PlayerGui)
 
-local function teleport(pos)
-	getRoot().CFrame = CFrame.new(pos + Vector3.new(0,3,0))
-end
+	local box = Instance.new("Frame", confirmGui)
+	box.Size = UDim2.fromOffset(220,100)
+	box.Position = UDim2.fromScale(0.5,0.5)
+	box.AnchorPoint = Vector2.new(0.5,0.5)
+	box.BackgroundColor3 = Color3.fromRGB(30,30,30)
+	Instance.new("UICorner", box)
 
-UserInputService.TouchTap:Connect(function(touchPositions, processed)
-	if processed or not tpEnabled then return end
+	local label = Instance.new("TextLabel", box)
+	label.Size = UDim2.new(1,0,0.5,0)
+	label.BackgroundTransparency = 1
+	label.Text = "정말 이동?"
+	label.TextColor3 = Color3.new(1,1,1)
+	label.TextScaled = true
 
-	local pos = touchPositions[1]
-	if not pos then return end
+	local yes = Instance.new("TextButton", box)
+	yes.Size = UDim2.new(0.5,0,0.5,0)
+	yes.Position = UDim2.new(0,0,0.5,0)
+	yes.Text = "YES"
+	yes.BackgroundColor3 = Color3.fromRGB(0,200,0)
 
-	local ray = camera:ScreenPointToRay(pos.X, pos.Y)
-	local result = Workspace:Raycast(ray.Origin, ray.Direction * 1000)
+	local no = Instance.new("TextButton", box)
+	no.Size = UDim2.new(0.5,0,0.5,0)
+	no.Position = UDim2.new(0.5,0,0.5,0)
+	no.Text = "NO"
+	no.BackgroundColor3 = Color3.fromRGB(200,0,0)
 
-	if result then
-		pendingPosition = result.Position
+	yes.MouseButton1Click:Connect(function()
+		getRoot().CFrame = CFrame.new(pendingPos + Vector3.new(0,3,0))
+		confirmGui:Destroy()
+	end)
 
-		coordLabel.Text = string.format(
-			"X: %.1f Y: %.1f Z: %.1f",
-			pendingPosition.X,
-			pendingPosition.Y,
-			pendingPosition.Z
-		)
-
-		confirmFrame.Visible = true
-	end
-end)
-
-yesBtn.MouseButton1Click:Connect(function()
-	if pendingPosition then
-		teleport(pendingPosition)
-	end
-	confirmFrame.Visible = false
-end)
-
-noBtn.MouseButton1Click:Connect(function()
-	confirmFrame.Visible = false
+	no.MouseButton1Click:Connect(function()
+		if marker then marker:Destroy() end
+		confirmGui:Destroy()
+	end)
 end)
