@@ -33,15 +33,16 @@ local espTable = {}
 
 -- ===== GUI =====
 
-local gui = Instance.new("ScreenGui", player.PlayerGui)
-gui.ResetOnSpawn = false
+local mainGui = Instance.new("ScreenGui", player.PlayerGui)
+mainGui.ResetOnSpawn = false
 
-local frame = Instance.new("Frame", gui)
+local frame = Instance.new("Frame", mainGui)
 frame.Size = UDim2.fromOffset(340, 550)
 frame.Position = UDim2.fromOffset(80, 60)
 frame.BackgroundColor3 = Color3.fromRGB(255,0,0)
 frame.Active = true
 frame.Draggable = true
+frame.Visible = false
 Instance.new("UICorner", frame)
 
 -- 🌈 무지개 배경
@@ -95,6 +96,22 @@ local nightBtn = makeBtn("밤",0.56,Color3.fromRGB(100,100,255))
 
 -- ESP
 local espBtn = makeBtn("ESP OFF",0.65,Color3.fromRGB(255,80,80))
+
+-- ===== OPEN 버튼 =====
+
+local openBtn = Instance.new("TextButton", mainGui)
+openBtn.Size = UDim2.fromOffset(120,40)
+openBtn.Position = UDim2.new(0.5, -60, 0, 20)
+openBtn.Text = "OPEN"
+openBtn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+openBtn.TextColor3 = Color3.new(1,1,1)
+openBtn.BorderSizePixel = 0
+Instance.new("UICorner", openBtn)
+
+openBtn.MouseButton1Click:Connect(function()
+	frame.Visible = not frame.Visible
+	openBtn.Text = frame.Visible and "CLOSE" or "OPEN"
+end)
 
 -- ===== 기능 =====
 
@@ -165,7 +182,7 @@ Players.PlayerAdded:Connect(function(plr)
 	end)
 end)
 
--- ===== TP 네온 발판 + 작은 확인창 =====
+-- ===== TP 네온 발판 =====
 
 mouse.Button1Down:Connect(function()
 	if not tpOn then return end
@@ -185,42 +202,5 @@ mouse.Button1Down:Connect(function()
 	marker.Color = Color3.fromRGB(255,0,0)
 	marker.Parent = workspace
 
-	-- 작은 확인창
-	local confirmGui = Instance.new("ScreenGui", player.PlayerGui)
-
-	local box = Instance.new("Frame", confirmGui)
-	box.Size = UDim2.fromOffset(220,100)
-	box.Position = UDim2.fromScale(0.5,0.5)
-	box.AnchorPoint = Vector2.new(0.5,0.5)
-	box.BackgroundColor3 = Color3.fromRGB(30,30,30)
-	Instance.new("UICorner", box)
-
-	local label = Instance.new("TextLabel", box)
-	label.Size = UDim2.new(1,0,0.5,0)
-	label.BackgroundTransparency = 1
-	label.Text = "정말 이동?"
-	label.TextColor3 = Color3.new(1,1,1)
-	label.TextScaled = true
-
-	local yes = Instance.new("TextButton", box)
-	yes.Size = UDim2.new(0.5,0,0.5,0)
-	yes.Position = UDim2.new(0,0,0.5,0)
-	yes.Text = "YES"
-	yes.BackgroundColor3 = Color3.fromRGB(0,200,0)
-
-	local no = Instance.new("TextButton", box)
-	no.Size = UDim2.new(0.5,0,0.5,0)
-	no.Position = UDim2.new(0.5,0,0.5,0)
-	no.Text = "NO"
-	no.BackgroundColor3 = Color3.fromRGB(200,0,0)
-
-	yes.MouseButton1Click:Connect(function()
-		getRoot().CFrame = CFrame.new(pendingPos + Vector3.new(0,3,0))
-		confirmGui:Destroy()
-	end)
-
-	no.MouseButton1Click:Connect(function()
-		if marker then marker:Destroy() end
-		confirmGui:Destroy()
-	end)
+	getRoot().CFrame = CFrame.new(pendingPos + Vector3.new(0,3,0))
 end)
