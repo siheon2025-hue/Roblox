@@ -1,70 +1,337 @@
--- ScreenGui 만들기
+-- LocalScript (StarterPlayerScripts)
+
 local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AimGui"
-screenGui.Parent = player:WaitForChild("PlayerGui")
-
--- 버튼 만들기
-local button = Instance.new("TextButton")
-button.Size = UDim2.new(0, 150, 0, 50)
-button.Position = UDim2.new(0, 10, 0, 10)
-button.Text = "에임 모드 OFF"
-button.Parent = screenGui
-
-local aimMode = false
-
-button.MouseButton1Click:Connect(function()
-    aimMode = not aimMode
-    button.Text = aimMode and "에임 모드 ON" or "에임 모드 OFF"
-end)
-
--- 가장 가까운 적 찾기
-local function getClosestEnemy()
-    local closest = nil
-    local shortest = math.huge
-
-    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return nil end
-
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-            local dist = (plr.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
-            if dist < shortest then
-                shortest = dist
-                closest = plr
-            end
-        end
-    end
-
-    return closest
+local function getChar()
+	return player.Character or player.CharacterAdded:Wait()
 end
 
--- 마우스 클릭 시 총알 발사
+local function getHum()
+	return getChar():WaitForChild("Humanoid")
+end
+
+local function getRoot()
+	return getChar():WaitForChild("HumanoidRootPart")
+end
+
+-- 상태값
+local tpOn = false
+local espOn = false
+local flyOn = false
+
+local defaultSpeed = 16
+local defaultJump = 50
+local flySpeed = 60
+
+local marker
+local pendingPos
+local espTable = {}
+
+local bv
+local bg
+
+-- ===== GUI =====
+
+local gui = Instance.new("ScreenGui")
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.fromOffset(340, 550)
+frame.Position = UDim2.fromOffset(80, 60)
+frame.BackgroundColor3 = Color3.fromRGB(255,0,0)
+frame.Active = true
+frame.Visible = false
+Instance.new("UICorner", frame)
+
+-- 무지개 배경
+RunService.RenderStepped:Connect(function()
+	local hue = tick() % 5 / 5
+	frame.BackgroundColor3 = Color3.fromHSV(hue,1,1)
+end)
+
+local function makeBtn(text,y,color)
+	local b = Instance.new("TextButton", frame)
+	b.Size = UDim2.new(0.8,0,0,40)
+	b.Position = UDim2.new(0.1,0,y,0)
+	b.Text = text
+	b.BackgroundColor3 = color
+	b.TextColor3 = Color3.new(1,1,1)
+	b.BorderSizePixel = 0
+	Instance.new("UICorner", b)
+	return b
+end
+
+-- TP
+local tpBtn = makeBtn("TP OFF",0.05,Color3.fromRGB(100,100,255))
+
+-- Speed
+local speedBox = Instance.new("TextBox", frame)
+speedBox.Size = UDim2.new(0.8,0,0,35)
+speedBox.Position = UDim2.new(0.1,0,0.15,0)
+speedBox.PlaceholderText = "Speed 입력"
+speedBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+speedBox.TextColor3 = Color3.new(1,1,1)
+speedBox.BorderSizePixel = 0
+Instance.new("UICorner", speedBox)
+
+local speedBtn = makeBtn("Speed 적용",0.22,Color3.fromRGB(80,160,255))
+
+-- Jump
+local jumpBox = Instance.new("TextBox", frame)
+jumpBox.Size = UDim2.new(0.8,0,0,35)
+jumpBox.Position = UDim2.new(0.1,0,0.32,0)
+jumpBox.PlaceholderText = "Jump 입력"
+jumpBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+jumpBox.TextColor3 = Color3.new(1,1,1)
+jumpBox.BorderSizePixel = 0
+Instance.new("UICorner", jumpBox)
+
+local jumpBtn = makeBtn("Jump 적용",0.39,Color3.fromRGB(80,255,120))
+
+-- 낮 / 밤
+local dayBtn = makeBtn("낮",0.49,Color3.fromRGB(255,200,100))
+local nightBtn = makeBtn("밤",0.56,Color3.fromRGB(100,100,255))
+
+-- ESP
+local espBtn = makeBtn("ESP OFF",0.65,Color3.fromRGB(255,80,80))
+
+-- FLY
+local flyBtn = makeBtn("FLY OFF",0.72,Color3.fromRGB(80,0,255))
+
+-- ===== OPEN 버튼 =====
+local openBtn = Instance.new("TextButton", gui)
+openBtn.Size = UDim2.fromOffset(120,40)
+openBtn.Position = UDim2.new(0.5, -60, 0, 20)
+openBtn.Text = "OPEN"
+openBtn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+openBtn.TextColor3 = Color3.new(1,1,1)
+openBtn.BorderSizePixel = 0
+Instance.new("UICorner", openBtn)
+
+openBtn.MouseButton1Click:Connect(function()
+	frame.Visible = not frame.Visible
+	openBtn.Text = frame.Visible and "CLOSE" or "OPEN"
+end)
+
+-- ===== GUI 드래그 =====
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+frame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = frame.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+frame.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+UIS.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - dragStart
+		frame.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
+	end
+end)
+
+-- ===== 기능 =====
+
+tpBtn.MouseButton1Click:Connect(function()
+	tpOn = not tpOn
+	tpBtn.Text = tpOn and "TP ON" or "TP OFF"
+end)
+
+speedBtn.MouseButton1Click:Connect(function()
+	local v = tonumber(speedBox.Text)
+	getHum().WalkSpeed = v or defaultSpeed
+end)
+
+jumpBtn.MouseButton1Click:Connect(function()
+	local v = tonumber(jumpBox.Text)
+	getHum().JumpPower = v or defaultJump
+end)
+
+dayBtn.MouseButton1Click:Connect(function()
+	Lighting.ClockTime = 14
+end)
+
+nightBtn.MouseButton1Click:Connect(function()
+	Lighting.ClockTime = 0
+end)
+
+-- ===== ESP =====
+local function addESP(plr)
+	if plr == player then return end
+	if not plr.Character then return end
+	if espTable[plr] then return end
+
+	local highlight = Instance.new("Highlight")
+	highlight.FillColor = Color3.fromRGB(255,0,0)
+	highlight.FillTransparency = 0.4
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	highlight.Adornee = plr.Character
+	highlight.Parent = plr.Character
+
+	espTable[plr] = highlight
+end
+
+local function removeESP()
+	for _,v in pairs(espTable) do
+		if v then v:Destroy() end
+	end
+	table.clear(espTable)
+end
+
+espBtn.MouseButton1Click:Connect(function()
+	espOn = not espOn
+	espBtn.Text = espOn and "ESP ON" or "ESP OFF"
+
+	if espOn then
+		for _,plr in pairs(Players:GetPlayers()) do
+			addESP(plr)
+		end
+	else
+		removeESP()
+	end
+end)
+
+Players.PlayerAdded:Connect(function(plr)
+	plr.CharacterAdded:Connect(function()
+		task.wait(0.5)
+		if espOn then addESP(plr) end
+	end)
+end)
+
+-- ===== TP + 네온 발판 + 확인창 =====
 mouse.Button1Down:Connect(function()
-    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-    local origin = player.Character.HumanoidRootPart.Position
-    local direction
+	if not tpOn then return end
+	if not mouse.Hit then return end
 
-    if aimMode then
-        local target = getClosestEnemy()
-        if target then
-            direction = (target.Character.HumanoidRootPart.Position - origin).Unit * 500
-        else
-            direction = (mouse.Hit.Position - origin).Unit * 500
-        end
-    else
-        direction = (mouse.Hit.Position - origin).Unit * 500
-    end
+	local pos = mouse.Hit.Position
+	pendingPos = pos
 
-    -- Raycast
-    local rayParams = RaycastParams.new()
-    rayParams.FilterDescendantsInstances = {player.Character}
-    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+	if marker then marker:Destroy() end
 
-    local result = workspace:Raycast(origin, direction, rayParams)
-    if result then
-        print("타격 대상:", result.Instance.Name)
-    end
+	marker = Instance.new("Part")
+	marker.Size = Vector3.new(6,0.5,6)
+	marker.Position = pos + Vector3.new(0,0.25,0)
+	marker.Anchored = true
+	marker.CanCollide = false
+	marker.Material = Enum.Material.Neon
+	marker.Color = Color3.fromRGB(255,0,0)
+	marker.Parent = workspace
+
+	local confirmGui = Instance.new("ScreenGui", player.PlayerGui)
+
+	local box = Instance.new("Frame", confirmGui)
+	box.Size = UDim2.fromOffset(220,100)
+	box.Position = UDim2.fromScale(0.5,0.5)
+	box.AnchorPoint = Vector2.new(0.5,0.5)
+	box.BackgroundColor3 = Color3.fromRGB(30,30,30)
+	Instance.new("UICorner", box)
+
+	local label = Instance.new("TextLabel", box)
+	label.Size = UDim2.new(1,0,0.5,0)
+	label.BackgroundTransparency = 1
+	label.Text = "정말 이동?"
+	label.TextColor3 = Color3.new(1,1,1)
+	label.TextScaled = true
+
+	local yes = Instance.new("TextButton", box)
+	yes.Size = UDim2.new(0.5,0,0.5,0)
+	yes.Position = UDim2.new(0,0,0.5,0)
+	yes.Text = "YES"
+	yes.BackgroundColor3 = Color3.fromRGB(0,200,0)
+
+	local no = Instance.new("TextButton", box)
+	no.Size = UDim2.new(0.5,0,0.5,0)
+	no.Position = UDim2.new(0.5,0,0.5,0)
+	no.Text = "NO"
+	no.BackgroundColor3 = Color3.fromRGB(200,0,0)
+
+	yes.MouseButton1Click:Connect(function()
+		getRoot().CFrame = CFrame.new(pendingPos + Vector3.new(0,3,0))
+		confirmGui:Destroy()
+	end)
+
+	no.MouseButton1Click:Connect(function()
+		if marker then marker:Destroy() end
+		confirmGui:Destroy()
+	end)
+end)
+
+-- ===== FLY 기능 =====
+local function startFly()
+	local char = getChar()
+	local root = char:WaitForChild("HumanoidRootPart")
+	local hum = char:WaitForChild("Humanoid")
+
+	hum:ChangeState(Enum.HumanoidStateType.Physics)
+
+	bv = Instance.new("BodyVelocity")
+	bv.MaxForce = Vector3.new(1,1,1) * 100000
+	bv.Velocity = Vector3.zero
+	bv.Parent = root
+
+	bg = Instance.new("BodyGyro")
+	bg.MaxTorque = Vector3.new(1,1,1) * 100000
+	bg.CFrame = root.CFrame
+	bg.Parent = root
+
+	RunService:BindToRenderStep("FlyMove", Enum.RenderPriority.Character.Value, function()
+		local moveDir = hum.MoveDirection
+		local y = 0
+		if UIS:IsKeyDown(Enum.KeyCode.Space) then
+			y = 1
+		elseif UIS:IsKeyDown(Enum.KeyCode.LeftControl) then
+			y = -1
+		end
+
+		-- 캐릭터 기준 이동
+		local move = root.CFrame:VectorToWorldSpace(Vector3.new(
+			moveDir.X,
+			0,
+			moveDir.Z
+		))
+
+		bv.Velocity = (move + Vector3.new(0,y,0)) * flySpeed
+		bg.CFrame = workspace.CurrentCamera.CFrame
+	end)
+end
+
+local function stopFly()
+	RunService:UnbindFromRenderStep("FlyMove")
+	if bv then bv:Destroy() end
+	if bg then bg:Destroy() end
+	getChar():WaitForChild("Humanoid"):ChangeState(Enum.HumanoidStateType.GettingUp)
+end
+
+flyBtn.MouseButton1Click:Connect(function()
+	flyOn = not flyOn
+	flyBtn.Text = flyOn and "FLY ON" or "FLY OFF"
+	if flyOn then startFly() else stopFly() end
 end)
