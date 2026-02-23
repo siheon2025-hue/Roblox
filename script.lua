@@ -1,242 +1,121 @@
--- LocalScript (StarterPlayerScripts)
-
-local Players = game:GetService("Players")
-local Lighting = game:GetService("Lighting")
-local UIS = game:GetService("UserInputService")
+local lp = game.Players.LocalPlayer
 local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
 
-local player = Players.LocalPlayer
-local mouse = player:GetMouse()
+-- 전역 변수
+_G.FullInvis = false
+_G.SilentAim = false
+_G.ESP = false
+_G.HitboxSize = 10
+_G.Speed = 16
+_G.InfJump = false
 
-local function getChar()
-	return player.Character or player.CharacterAdded:Wait()
+-- [ UI 생성 ]
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+local Main = Instance.new("Frame", ScreenGui)
+Main.Size = UDim2.new(0, 240, 0, 420)
+Main.Position = UDim2.new(0.5, -120, 0.5, -210)
+Main.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+Main.Active = true
+Main.Draggable = true
+
+local Title = Instance.new("TextLabel", Main)
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Text = "CG_CLAN FIX V6"
+Title.TextColor3 = Color3.fromRGB(255, 100, 0)
+Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+
+-- 입력창 (히트박스 크기 지정)
+local Input = Instance.new("TextBox", Main)
+Input.Size = UDim2.new(0.9, 0, 0, 35)
+Input.Position = UDim2.new(0.05, 0, 0.12, 0)
+Input.PlaceholderText = "히트박스 크기 (입력 후 엔터)"
+Input.Text = "10"
+Input.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+Input.TextColor3 = Color3.new(1, 1, 1)
+Input.FocusLost:Connect(function() _G.HitboxSize = tonumber(Input.Text) or 10 end)
+
+local function CreateBtn(name, pos, color, callback)
+    local btn = Instance.new("TextButton", Main)
+    btn.Size = UDim2.new(0.9, 0, 0, 40)
+    btn.Position = pos
+    btn.Text = name
+    btn.BackgroundColor3 = color
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.MouseButton1Click:Connect(callback)
+    return btn
 end
 
-local function getHum()
-	return getChar():WaitForChild("Humanoid")
-end
-
-local function getRoot()
-	return getChar():WaitForChild("HumanoidRootPart")
-end
-
--- 상태값
-local tpOn = false
-local espOn = false
-
-local defaultSpeed = 16
-local defaultJump = 50
-
-local marker
-local pendingPos
-local espTable = {}
-
--- ===== GUI =====
-
-local gui = Instance.new("ScreenGui", player.PlayerGui)
-gui.ResetOnSpawn = false
-
-local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.fromOffset(340, 550)
-frame.Position = UDim2.fromOffset(80, 60)
-frame.BackgroundColor3 = Color3.fromRGB(255,0,0)
-frame.Active = true
-frame.Draggable = true
-frame.Visible = false
-Instance.new("UICorner", frame)
-
--- 🌈 무지개 배경
-RunService.RenderStepped:Connect(function()
-	local hue = tick() % 5 / 5
-	frame.BackgroundColor3 = Color3.fromHSV(hue,1,1)
+-- 기능 토글
+CreateBtn("SILENT AIM & HITBOX", UDim2.new(0.05, 0, 0.25, 0), Color3.fromRGB(150, 0, 0), function()
+    _G.SilentAim = not _G.SilentAim
 end)
 
-local function makeBtn(text,y,color)
-	local b = Instance.new("TextButton", frame)
-	b.Size = UDim2.new(0.8,0,0,40)
-	b.Position = UDim2.new(0.1,0,y,0)
-	b.Text = text
-	b.BackgroundColor3 = color
-	b.TextColor3 = Color3.new(1,1,1)
-	b.BorderSizePixel = 0
-	Instance.new("UICorner", b)
-	return b
-end
-
--- TP
-local tpBtn = makeBtn("TP OFF",0.05,Color3.fromRGB(100,100,255))
-
--- Speed
-local speedBox = Instance.new("TextBox", frame)
-speedBox.Size = UDim2.new(0.8,0,0,35)
-speedBox.Position = UDim2.new(0.1,0,0.15,0)
-speedBox.PlaceholderText = "Speed 입력"
-speedBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
-speedBox.TextColor3 = Color3.new(1,1,1)
-speedBox.BorderSizePixel = 0
-Instance.new("UICorner", speedBox)
-
-local speedBtn = makeBtn("Speed 적용",0.22,Color3.fromRGB(80,160,255))
-
--- Jump
-local jumpBox = Instance.new("TextBox", frame)
-jumpBox.Size = UDim2.new(0.8,0,0,35)
-jumpBox.Position = UDim2.new(0.1,0,0.32,0)
-jumpBox.PlaceholderText = "Jump 입력"
-jumpBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
-jumpBox.TextColor3 = Color3.new(1,1,1)
-jumpBox.BorderSizePixel = 0
-Instance.new("UICorner", jumpBox)
-
-local jumpBtn = makeBtn("Jump 적용",0.39,Color3.fromRGB(80,255,120))
-
--- 낮 / 밤
-local dayBtn = makeBtn("낮",0.49,Color3.fromRGB(255,200,100))
-local nightBtn = makeBtn("밤",0.56,Color3.fromRGB(100,100,255))
-
--- ESP
-local espBtn = makeBtn("ESP OFF",0.65,Color3.fromRGB(255,80,80))
-
--- ===== OPEN 버튼 (위쪽 가운데) =====
-
-local openBtn = Instance.new("TextButton", gui)
-openBtn.Size = UDim2.fromOffset(120,40)
-openBtn.Position = UDim2.new(0.5, -60, 0, 20)
-openBtn.Text = "OPEN"
-openBtn.BackgroundColor3 = Color3.fromRGB(0,0,0)
-openBtn.TextColor3 = Color3.new(1,1,1)
-openBtn.BorderSizePixel = 0
-Instance.new("UICorner", openBtn)
-
-openBtn.MouseButton1Click:Connect(function()
-	frame.Visible = not frame.Visible
-	openBtn.Text = frame.Visible and "CLOSE" or "OPEN"
+CreateBtn("ESP (월핵)", UDim2.new(0.05, 0, 0.4, 0), Color3.fromRGB(150, 0, 0), function()
+    _G.ESP = not _G.ESP
 end)
 
--- ===== 기능 =====
-
-tpBtn.MouseButton1Click:Connect(function()
-	tpOn = not tpOn
-	tpBtn.Text = tpOn and "TP ON" or "TP OFF"
+-- 투명화 토글 (꺼질 때 즉시 복구 로직 포함)
+CreateBtn("FULL INVISIBILITY", UDim2.new(0.05, 0, 0.55, 0), Color3.fromRGB(50, 50, 50), function()
+    _G.FullInvis = not _G.FullInvis
+    if not _G.FullInvis and lp.Character then
+        for _, v in pairs(lp.Character:GetDescendants()) do
+            if v:IsA("BasePart") or v:IsA("Decal") then
+                v.Transparency = 0
+                v.LocalTransparencyModifier = 0
+            end
+        end
+    end
 end)
 
-speedBtn.MouseButton1Click:Connect(function()
-	local v = tonumber(speedBox.Text)
-	getHum().WalkSpeed = v or defaultSpeed
+CreateBtn("SPEED 100 / JUMP", UDim2.new(0.05, 0, 0.7, 0), Color3.fromRGB(50, 50, 50), function()
+    _G.Speed = (_G.Speed == 16) and 100 or 16
+    _G.InfJump = not _G.InfJump
 end)
 
-jumpBtn.MouseButton1Click:Connect(function()
-	local v = tonumber(jumpBox.Text)
-	getHum().JumpPower = v or defaultJump
+-- [ 무한 루프: 실시간 감지 ]
+RunService.Stepped:Connect(function()
+    -- 1. 히트박스 & ESP (상대방 부활 시 즉시 재적용)
+    for _, v in pairs(game.Players:GetPlayers()) do
+        if v ~= lp and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = v.Character.HumanoidRootPart
+            
+            if _G.SilentAim then
+                hrp.Size = Vector3.new(_G.HitboxSize, _G.HitboxSize, _G.HitboxSize)
+                hrp.Transparency = 0.7 -- 확인용 (투명하게 하려면 1)
+                hrp.CanCollide = false
+            else
+                hrp.Size = Vector3.new(2, 2, 1) -- 원래 크기로 복구
+                hrp.Transparency = 0
+            end
+
+            -- ESP 하이라이트
+            if _G.ESP then
+                if not v.Character:FindFirstChild("Highlight") then
+                    Instance.new("Highlight", v.Character).FillColor = Color3.new(1, 0, 0)
+                end
+            else
+                if v.Character:FindFirstChild("Highlight") then v.Character.Highlight:Destroy() end
+            end
+        end
+    end
+
+    -- 2. 내 캐릭터 상태 (투명화 & 스피드)
+    if lp.Character and lp.Character:FindFirstChild("Humanoid") then
+        lp.Character.Humanoid.WalkSpeed = _G.Speed
+        
+        if _G.FullInvis then
+            for _, p in pairs(lp.Character:GetDescendants()) do
+                if p:IsA("BasePart") or p:IsA("Decal") then
+                    p.Transparency = 1
+                    p.LocalTransparencyModifier = 1
+                end
+            end
+        end
+    end
 end)
 
-dayBtn.MouseButton1Click:Connect(function()
-	Lighting.ClockTime = 14
-end)
-
-nightBtn.MouseButton1Click:Connect(function()
-	Lighting.ClockTime = 0
-end)
-
--- ===== ESP =====
-
-local function addESP(plr)
-	if plr == player then return end
-	if not plr.Character then return end
-	if espTable[plr] then return end
-
-	local highlight = Instance.new("Highlight")
-	highlight.FillColor = Color3.fromRGB(255,0,0)
-	highlight.FillTransparency = 0.4
-	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	highlight.Adornee = plr.Character
-	highlight.Parent = plr.Character
-
-	espTable[plr] = highlight
-end
-
-local function removeESP()
-	for _,v in pairs(espTable) do
-		if v then v:Destroy() end
-	end
-	table.clear(espTable)
-end
-
-espBtn.MouseButton1Click:Connect(function()
-	espOn = not espOn
-	espBtn.Text = espOn and "ESP ON" or "ESP OFF"
-
-	if espOn then
-		for _,plr in pairs(Players:GetPlayers()) do
-			addESP(plr)
-		end
-	else
-		removeESP()
-	end
-end)
-
-Players.PlayerAdded:Connect(function(plr)
-	plr.CharacterAdded:Connect(function()
-		task.wait(0.5)
-		if espOn then addESP(plr) end
-	end)
-end)
-
--- ===== TP 네온 발판 + 확인창 (원래 구조 유지) =====
-
-mouse.Button1Down:Connect(function()
-	if not tpOn then return end
-	if not mouse.Hit then return end
-
-	local pos = mouse.Hit.Position
-	pendingPos = pos
-
-	if marker then marker:Destroy() end
-
-	marker = Instance.new("Part")
-	marker.Size = Vector3.new(6,0.5,6)
-	marker.Position = pos + Vector3.new(0,0.25,0)
-	marker.Anchored = true
-	marker.CanCollide = false
-	marker.Material = Enum.Material.Neon
-	marker.Color = Color3.fromRGB(255,0,0)
-	marker.Parent = workspace
-
-	local confirmGui = Instance.new("ScreenGui", player.PlayerGui)
-
-	local box = Instance.new("Frame", confirmGui)
-	box.Size = UDim2.fromOffset(220,100)
-	box.Position = UDim2.fromScale(0.5,0.5)
-	box.AnchorPoint = Vector2.new(0.5,0.5)
-	box.BackgroundColor3 = Color3.fromRGB(30,30,30)
-	Instance.new("UICorner", box)
-
-	local label = Instance.new("TextLabel", box)
-	label.Size = UDim2.new(1,0,0.5,0)
-	label.BackgroundTransparency = 1
-	label.Text = "정말 이동?"
-	label.TextColor3 = Color3.new(1,1,1)
-	label.TextScaled = true
-
-	local yes = Instance.new("TextButton", box)
-	yes.Size = UDim2.new(0.5,0,0.5,0)
-	yes.Position = UDim2.new(0,0,0.5,0)
-	yes.Text = "YES"
-	yes.BackgroundColor3 = Color3.fromRGB(0,200,0)
-
-	local no = Instance.new("TextButton", box)
-	no.Size = UDim2.new(0.5,0,0.5,0)
-	no.Position = UDim2.new(0.5,0,0.5,0)
-	no.Text = "NO"
-	no.BackgroundColor3 = Color3.fromRGB(200,0,0)
-
-	yes.MouseButton1Click:Connect(function()
-		getRoot().CFrame = CFrame.new(pendingPos + Vector3.new(0,3,0))
-		confirmGui:Destroy()
-	end)
-
-	no.MouseButton1Click:Connect(function()
-		if marker then marker:Destroy() end
-		confirmGui:Destroy()
-	end)
+-- 무한 점프
+UIS.JumpRequest:Connect(function()
+    if _G.InfJump and lp.Character:FindFirstChild("Humanoid") then lp.Character.Humanoid:ChangeState(3) end
 end)
